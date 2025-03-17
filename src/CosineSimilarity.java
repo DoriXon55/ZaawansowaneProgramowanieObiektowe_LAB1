@@ -34,7 +34,6 @@ public class CosineSimilarity {
         return dotProduct / (magnitude1 * magnitude2);
     }
 
-
     public static class SimilarityResults implements Comparable<SimilarityResults>
     {
         private final String documentPath;
@@ -56,11 +55,5 @@ public class CosineSimilarity {
         {
             return String.format("%s - Podobieństwo: %.4f", documentPath, similarityScore);
         }
-
-
-
-
     }
-
-
 }

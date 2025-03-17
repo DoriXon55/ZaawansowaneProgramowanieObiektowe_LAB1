@@ -142,7 +142,10 @@ public class MainFrame {
             return;
         }
 
-        // Sortuje wyniki od największego do najmniejszego
+
+        /*
+        Sortowanie wyników podobieństwa.
+         */
         Collections.sort(similarityResults);
 
         outputArea.append("\n===== POSORTOWANE WYNIKI PODOBIEŃSTWA =====\n");
@@ -171,7 +174,16 @@ public class MainFrame {
             referenceFilePath = selectedFile.toPath();
             outputArea.setText("Wybrano plik referencyjny: " + selectedFile.getName() + "\n");
 
-            // Wczytaj wektor referencyjny od razu po wyborze pliku
+            /*
+            Czyszczenie wyników podobieństwa, gdy wybierzemy plik na nowo.
+             */
+            similarityResults.clear();
+
+
+
+            /*
+            Wczytanie pliku referyncyjnego.
+             */
             try {
                 referenceVector = getLinkedCountedWord(referenceFilePath, 0);
                 outputArea.append("Wczytano wektor referencyjny z " + selectedFile.getName() + "\n");
@@ -209,94 +221,31 @@ public class MainFrame {
         similarityResults.clear();
 
         final BlockingQueue<Optional<Path>> queue = new LinkedBlockingQueue<>(howMuchcustomers);
-        Runnable producent = getRunnable(queue);
 
-        Runnable consument = () -> {
-            final String name = Thread.currentThread().getName();
-            final String startInfo = String.format("Konsument: %s uruchomiony...\n", name);
-            SwingUtilities.invokeLater(() -> outputArea.append(startInfo));
+        /*
+        Wątek producenta.
+         */
+        Runnable producentThread = getRunnable(queue);
 
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    Optional<Path> optionalPath = queue.take();
-                    if (optionalPath.isEmpty()) {
-                        break;
-                    }
+        /*
+        Wątek konsumenta.
+         */
+        Runnable consumentThread = createConsumer(queue);
 
-                    Path path = optionalPath.get();
-                    final String fileName = path.getFileName().toString();
-                    final String processInfo = String.format("Przetwarzanie pliku: %s\n", fileName);
-                    SwingUtilities.invokeLater(() -> outputArea.append(processInfo));
-
-                    try {
-                        // Zawsze oblicz statystykę słów
-                        Map<String, Long> wordStats = getLinkedCountedWord(path, statistics);
-
-                        // Wyświetl statystykę wyrazów
-                        SwingUtilities.invokeLater(() -> {
-                            outputArea.append("\nStatystyka wyrazów w pliku " + fileName + ":\n");
-                            if (wordStats.isEmpty()) {
-                                outputArea.append("  Brak słów w pliku lub wszystkie zostały odfiltrowane\n");
-                            } else {
-                                wordStats.forEach((word, count) ->
-                                        outputArea.append("  " + word + " = " + count + "\n")
-                                );
-                            }
-                        });
-
-                        // Jeśli tryb podobieństwa jest włączony, oblicz podobieństwo kosinusowe
-                        if (useSimilarityMode && referenceVector != null) {
-                            // Do porównania używamy pełnego wektora słów (bez limitu)
-                            Map<String, Long> fullWordStats = getLinkedCountedWord(path, 0);
-
-                            // Dodaj wynik do listy wyników podobieństwa
-                            final double finalSimilarity = CosineSimilarity.cosineSimilarity(referenceVector, fullWordStats);
-                            CosineSimilarity.SimilarityResults newResult =
-                                    new CosineSimilarity.SimilarityResults(fileName, finalSimilarity);
-
-                            synchronized (similarityResults) {
-                                similarityResults.add(newResult);
-                            }
-
-                            // Wyświetl wynik podobieństwa
-                            SwingUtilities.invokeLater(() -> outputArea.append("  Podobieństwo do pliku referencyjnego: " +
-                                    String.format("%.4f", finalSimilarity) + "\n"));
-                        }
-                    } catch (Exception e) {
-                        final String errorMessage = e.getMessage();
-                        SwingUtilities.invokeLater(() -> outputArea.append("Błąd podczas przetwarzania pliku " + fileName + ": " +
-                                errorMessage + "\n"));
-                        Logger.getLogger(MainFrame.class.getName()).log(Level.SEVERE, "Komunikat opisujący kontekst błędu", e);
-                    }
-                } catch (InterruptedException e) {
-                    final String interruptInfo = String.format("Oczekiwanie konsumenta %s zostało przerwane!\n", name);
-                    SwingUtilities.invokeLater(() -> outputArea.append(interruptInfo));
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-
-            final String endInfo = String.format("Konsument %s zakończył pracę!\n", name);
-            SwingUtilities.invokeLater(() -> outputArea.append(endInfo));
-        };
-
-        // Uruchom producentów
         for (int i = 0; i < howMuchproducents; i++) {
-            Future<?> f = executor.submit(producent);
+            Future<?> f = executor.submit(producentThread);
             producentFuture.add(f);
         }
 
-        // Uruchom konsumentów
+
         for (int i = 0; i < howMuchcustomers; i++) {
-            executor.submit(consument);
+            executor.submit(consumentThread);
         }
     }
 
     private Runnable getRunnable(BlockingQueue<Optional<Path>> queue) {
         final int delay = 60;
 
-        // Wstaw poison pills dla wszystkich konsumentów
-        // Wyszukiwanie plików tekstowych i dodawanie ich do kolejki
         return () -> {
             final String name = Thread.currentThread().getName();
             final String info = String.format("Producent: %s uruchomiony...\n", name);
@@ -304,7 +253,10 @@ public class MainFrame {
 
             while (!Thread.currentThread().isInterrupted()) {
                 if (isRunning.get()) {
-                    // Wstaw poison pills dla wszystkich konsumentów
+
+                    /*
+                    Wstawianie poison pills do kolejki, aby zakończyć działanie konsumentów.
+                     */
                     for (int i = 0; i < howMuchcustomers; i++) {
                         try {
                             queue.put(Optional.empty());
@@ -316,7 +268,10 @@ public class MainFrame {
                     }
                     break;
                 } else {
-                    // Wyszukiwanie plików tekstowych i dodawanie ich do kolejki
+
+                    /*
+                    Wyszukiwanie plików tekstowych i dodawanie ich do kolejki.
+                     */
                     try {
                         Path dir = Paths.get(DIR_PATH);
                         if (Files.exists(dir) && Files.isDirectory(dir)) {
@@ -366,6 +321,93 @@ public class MainFrame {
             }
 
             final String endInfo = String.format("Producent %s zakończył pracę!\n", name);
+            SwingUtilities.invokeLater(() -> outputArea.append(endInfo));
+        };
+    }
+
+    private Runnable createConsumer(BlockingQueue<Optional<Path>> queue)
+    {
+        return () -> {
+            final String name = Thread.currentThread().getName();
+            final String startInfo = String.format("Konsument: %s uruchomiony...\n", name);
+            SwingUtilities.invokeLater(() -> outputArea.append(startInfo));
+
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Optional<Path> optionalPath = queue.take();
+                    if (optionalPath.isEmpty()) {
+                        break;
+                    }
+
+                    Path path = optionalPath.get();
+                    final String fileName = path.getFileName().toString();
+                    final String processInfo = String.format("Przetwarzanie pliku: %s\n", fileName);
+                    SwingUtilities.invokeLater(() -> outputArea.append(processInfo));
+
+                    try {
+
+                        /*
+                        Oblicz statystykę wyrazów.
+                         */
+                        Map<String, Long> wordStats = getLinkedCountedWord(path, statistics);
+
+                        /*
+                        Wyświetl statystykę wyrazów w interfejsie użytkownika.
+                         */
+                        SwingUtilities.invokeLater(() -> {
+                            outputArea.append("\nStatystyka wyrazów w pliku " + fileName + ":\n");
+                            if (wordStats.isEmpty()) {
+                                outputArea.append("  Brak słów w pliku lub wszystkie zostały odfiltrowane\n");
+                            } else {
+                                wordStats.forEach((word, count) ->
+                                        outputArea.append("  " + word + " = " + count + "\n")
+                                );
+                            }
+                        });
+
+                        /*
+                        Jeśli tryb podobieństwa jest włączony, oblicz je.
+                         */
+                        if (useSimilarityMode && referenceVector != null) {
+
+                            /*
+                            Użycie wektora słów do porównywania.
+                             */
+                            Map<String, Long> fullWordStats = getLinkedCountedWord(path, 0);
+
+
+                            /*
+                            Dodanie wyniku podobieństwa do listy wyników.
+                             */
+                            final double finalSimilarity = CosineSimilarity.cosineSimilarity(referenceVector, fullWordStats);
+                            CosineSimilarity.SimilarityResults newResult =
+                                    new CosineSimilarity.SimilarityResults(fileName, finalSimilarity);
+
+                            synchronized (similarityResults) {
+                                similarityResults.add(newResult);
+                            }
+
+                            /*
+                            Wyświetlanie wyników podobieństwa w interfejsie użytkownika.
+                             */
+                            SwingUtilities.invokeLater(() -> outputArea.append("  Podobieństwo do pliku referencyjnego: " +
+                                    String.format("%.4f", finalSimilarity) + "\n"));
+                        }
+                    } catch (Exception e) {
+                        final String errorMessage = e.getMessage();
+                        SwingUtilities.invokeLater(() -> outputArea.append("Błąd podczas przetwarzania pliku " + fileName + ": " +
+                                errorMessage + "\n"));
+                        Logger.getLogger(MainFrame.class.getName()).log(Level.SEVERE, "Komunikat opisujący kontekst błędu", e);
+                    }
+                } catch (InterruptedException e) {
+                    final String interruptInfo = String.format("Oczekiwanie konsumenta %s zostało przerwane!\n", name);
+                    SwingUtilities.invokeLater(() -> outputArea.append(interruptInfo));
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+
+            final String endInfo = String.format("Konsument %s zakończył pracę!\n", name);
             SwingUtilities.invokeLater(() -> outputArea.append(endInfo));
         };
     }
