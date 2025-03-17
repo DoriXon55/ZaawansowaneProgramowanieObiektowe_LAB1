@@ -142,7 +142,7 @@ public class MainFrame {
             return;
         }
 
-        // Sortuj wyniki według podobieństwa (od najwyższego do najniższego)
+        // Sortuje wyniki od największego do najmniejszego
         Collections.sort(similarityResults);
 
         outputArea.append("\n===== POSORTOWANE WYNIKI PODOBIEŃSTWA =====\n");
